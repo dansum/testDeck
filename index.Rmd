@@ -1,26 +1,103 @@
 ---
-title       : Test deck
-subtitle    : 
-author      : 
-job         : 
+title       : View-Count Reporter for YouTube IDs
+subtitle    : Project for Data Products MOOC, June 2014
+author      : Dan C
+job         : Student of R
 framework   : io2012        # {io2012, html5slides, shower, dzslides, ...}
 highlighter : highlight.js  # {highlight.js, prettify, highlight}
 hitheme     : tomorrow      # 
-widgets     : []            # {mathjax, quiz, bootstrap}
+widgets     : []        # {mathjax, quiz, bootstrap}
 mode        : selfcontained # {standalone, draft}
+knit        : slidify::knit2slides
 ---
 
-## Read-And-Delete
-
-1. Edit YAML front matter
-2. Write using R Markdown
-3. Use an empty line followed by three dashes to separate slides!
+## Ever wanted to create a video library on Youtube?
+* After you record a video, you want to see how many people view it
+* Before you record your next video, you want to know what types of videos are most actually watched!
+* You don’t want to keep going to Youtube to see the data manually
 
 --- .class #id 
 
-## Slide 2
-
-```{r, fig.height=5, fig.width=5}
-plot(1 : 10, 1 : 10)
+## You can get the YouTube data automatically and analyze it as you wish
+* Our video library: Khan Academy videos dubbed in Bulgarian
+* Some data about our videos is maintained on Google Docs -- and is downloaded here
+  - For your reference, this is the count of dubbed videos:
+``` {r echo=FALSE}
+require("RJSONIO")
+require("stringr")
+require("RCurl")
+# 2. Load the input data of Youtube IDs
+  #  2.1. For list of Bulgarian subtitles:
+url <- "https://docs.google.com/spreadsheet/pub?key=0AjbLIL-lySvRdFJpMTh4TUpORzZubDl0YXlsejZ2QXc&single=true&gid=19&output=csv"
+youtubeID.online <- read.csv(url,skip=3,stringsAsFactors = FALSE) # # fileEncoding = "windows-1251", encoding = "UTF8"
+  #   Select only necessary data: all cells under the one containing "ÐÑÐ»Ð³Ð°ÑÑÐºo ID"
+  #     Maybe also retain the categorization (eg, Math)
+youtubeID.online.bg <- youtubeID.online[,9]
+youtubeID <- youtubeID.online.bg[!(youtubeID.online.bg == "")]
+print(length(youtubeID))
 ```
+  - And this is the total count of views for those same videos (downloaded via Youtube API):
+```{r, echo=FALSE}
+# 3. Call the API
+api.root <- "https://www.googleapis.com/youtube/v3/videos?part=contentDetails%2Cstatistics&id="
+api.key <- "AIzaSyDPd2LR8_WBO3aJEciFkR98RXFl3-Zq4i0"   # Provide credentials
+api.list <- paste(api.root, youtubeID, "&key=", api.key,sep="")   # Prepare the list of URIs
+api.response <- getURL(api.list,ssl.verifypeer = FALSE)   # Call the API
 
+# 4. Prepare for extracting the data
+#     stats.names <- c("duration","viewCount","likeCount","dislikeCount","favoriteCount","commentCount")
+api.success <- grepl("\"duration\"",api.response)   # Find good rows
+api.clean <- api.response[api.success]
+obs <- length(api.clean)
+stats <- data.frame(id=character(obs),duration=integer(obs),view=integer(obs),like=integer(obs),dislike=integer(obs),favorite=integer(obs),comment=integer(obs),date=Sys.Date())  # Prepate the format for the final answer
+stats[,"id"] <- youtubeID[api.success]
+
+#   4.1. Extract duration
+matches <- regexec("duration\": \"PT([0-9A-Z]*)\",\n",api.clean)
+matches <- regmatches(api.clean,matches)
+stats[,"duration"] <- sapply(matches,function(x) x[2])
+#     4.1. Fix stats.duration from its mmMssS format
+#   4.2. Extract viewCount
+matches <- regexec("\"viewCount\": \"([0-9]*)\",\n",api.clean)
+matches <- regmatches(api.clean,matches)
+stats[,"view"] <- as.numeric(sapply(matches,function(x) x[2]))
+#   4.3. Extract likeCount
+matches <- regexec("\"likeCount\": \"([0-9]*)\",\n",api.clean)
+matches <- regmatches(api.clean,matches)
+stats[,"like"] <- sapply(matches,function(x) x[2])
+#   4.4. Extract dislikeCount
+matches <- regexec("\"dislikeCount\": \"([0-9]*)\",\n",api.clean)
+matches <- regmatches(api.clean,matches)
+stats[,"dislike"] <- sapply(matches,function(x) x[2])
+#   4.5. Extract favoriteCount
+matches <- regexec("\"favoriteCount\": \"([0-9]*)\",\n",api.clean)
+matches <- regmatches(api.clean,matches)
+stats[,"favorite"] <- sapply(matches,function(x) x[2])
+#   4.6. Extract commentCount
+matches <- regexec("\"commentCount\": \"([0-9]*)\"\n",api.clean)
+matches <- regmatches(api.clean,matches)
+stats[,"comment"] <- sapply(matches,function(x) x[2])
+
+print(sum(stats["view"]))
+```
+* Curious about our videos? Watch in Bulgarian here:  http://bg.khanacademy.org
+
+---
+
+## How to use the app
+* Provide inputs:
+  - which video to analyze
+  - what to count (the “measure”)
+  - and what that count you think should be (the “benchmark”)
+* See the results on the right-hand side of the app
+  - all counts should be positive
+* The view counts for our videos are on the next page ...
+
+
+---
+
+```{r nvd3plot2, results = 'asis', comment = NA, message = FALSE, echo = FALSE} 
+require(rCharts)
+chart_to_show <- rPlot(x = "id", y = "sum(view)", data = stats, type = "bar")
+chart_to_show
+```
